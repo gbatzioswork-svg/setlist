@@ -83,6 +83,13 @@
           <button class="btn" id="buildBtn">Δημιουργία</button>
           <button class="btn ghost" id="clearList">Καθαρισμός</button>
         </div>
+        <label for="mode">Γρήγορο άνοιγμα (1ο αποτέλεσμα)</label>
+        <select id="mode">
+          <option value="chords">Στίχοι + συγχορδίες (δείχνει και τονικότητα)</option>
+          <option value="lyrics">Μόνο στίχοι</option>
+        </select>
+        <button class="btn" id="openAll" style="width:100%;margin-top:10px">Άνοιξε όλα σε καρτέλες, με τη σειρά ↗</button>
+        <p class="muted" id="openNote" style="margin-top:6px">Ανοίγει το πρώτο αποτέλεσμα για κάθε τραγούδι. Την πρώτη φορά ο browser μπορεί να ρωτήσει αν επιτρέπεις τα αναδυόμενα παράθυρα. Πάτα «Να επιτρέπονται πάντα».</p>
         <label for="order">Μορφή γραμμής</label>
         <select id="order">
           <option value="at">Καλλιτέχνης - Τίτλος</option>
@@ -349,7 +356,7 @@ function build(){
   if(!lines.length){ m.innerHTML='<p class="muted">Η λίστα είναι άδεια.</p>'; out.innerHTML=''; document.getElementById('outToolbar').style.display='none'; return; }
   const res=lines.map(l=>({line:l,song:findSong(l)}));
   const missing=res.filter(r=>!r.song).map(r=>r.line);
-  const auto=getMxmKey()||lrcOn();
+  const auto=true;
   m.innerHTML=(missing.length?`<div class="queuebar"><span>${missing.length} από ${res.length} δεν είναι στη βιβλιοθήκη${auto?' — γίνεται αυτόματη αναζήτηση':''}.</span><button class="btn small" id="addAll">Πρόσθεσέ τα ένα-ένα →</button></div>`:'')+
   (missing.length&&!auto?`<div class="queuebar"><span>Η αυτόματη αναζήτηση είναι κλειστή.</span><button class="btn small" id="goSettings">Ενεργοποίηση στις Ρυθμίσεις →</button></div>`:'')+
   res.map((r,i)=> r.song
@@ -358,8 +365,9 @@ function build(){
   ).join('');
   const gs=document.getElementById('goSettings'); if(gs) gs.onclick=()=>document.querySelector('nav button[data-tab="backupPanel"]').click();
   m.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>startQueue([res[+b.dataset.i].line]));
+  m.querySelectorAll('.match').forEach((row,k)=>{ const a=document.createElement('a'); a.className='btn ghost small'; a.textContent='Άνοιγμα ↗'; a.target='_blank'; a.rel='noopener'; a.href=firstResultUrl(res[k].line); row.appendChild(a); });
   const all=document.getElementById('addAll'); if(all) all.onclick=()=>startQueue(missing);
-  let n=0; const key=getMxmKey()||lrcOn();
+  let n=0; const key=true;
   out.innerHTML=res.map((r,i)=>{ n++; const s=r.song;
     if(!s){ const p=parseLine(r.line);
       return `<article class="song" id="mx${i}" style="font-size:${fontScale}em"><div class="top"><div><h2><span class="num">${n}.</span>${esc(p.title)}</h2><div class="artist">${esc(p.artist)}</div></div><div class="keybadge" id="kb${i}" style="background:#bbb">?</div></div><pre class="lyrics muted">${key?'Αναζήτηση…':'Δεν υπάρχει στη βιβλιοθήκη. Ενεργοποίησε το LRCLIB ή βάλε Musixmatch key στις «Ρυθμίσεις» για αυτόματους στίχους.'}</pre></article>`; }
@@ -432,6 +440,26 @@ document.getElementById('autoKeyBtn').onclick=async()=>{
   b.textContent='Βρες τονικότητα (GetSongBPM)';
 };
 
+// ---------- stixoi.gr (shown as their own page, inside a frame) ----------
+async function stixoiFind(title){
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),10000);
+  try{
+    const r=await fetch('https://stixoi.gr/wp-json/wp/v2/search?subtype=stixoi&per_page=20&search='+encodeURIComponent(title),{signal:ctl.signal});
+    const j=await r.json(); const want=norm(title);
+    const clean=x=>norm((x.title||'').replace(/&#\d+;/g,"'").replace(/[‘’]/g,"'"));
+    return (Array.isArray(j)?j:[]).filter(x=>clean(x)===want).map(x=>x.url);
+  } finally { clearTimeout(t); }
+}
+function showFrame(el, pre, urls, k){
+  pre.outerHTML=`<div class="framewrap"><div class="row no-print" style="justify-content:space-between;margin-bottom:6px">
+      <span class="muted" style="font-size:12px">Από <a href="${esc(urls[k])}" target="_blank" rel="noopener">stixoi.gr</a>${urls.length>1?` · εκδοχή ${k+1} από ${urls.length} (ίδιος τίτλος, ίσως άλλος καλλιτέχνης)`:''}</span>
+      ${urls.length>1?'<button class="btn ghost small" data-next>Άλλη εκδοχή ↻</button>':''}</div>
+    <iframe src="${esc(urls[k])}" loading="lazy" referrerpolicy="no-referrer" style="width:100%;height:75vh;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe></div><pre class="lyrics" style="display:none"></pre>`;
+  const nb=el.querySelector('[data-next]');
+  if(nb) nb.onclick=()=>{ el.querySelector('.framewrap').remove(); const np=el.querySelector('.lyrics'); showFrame(el, np, urls, (k+1)%urls.length); };
+  el.dataset.src='stixoi.gr';
+}
+
 // ---------- LRCLIB ----------
 function lrcOn(){ try{ return localStorage.getItem(STORE+'-lrc')==='1'; }catch(e){ return !!window._lrc; } }
 async function lrcSearch(params){
@@ -473,11 +501,16 @@ async function fillAuto(i, p){
   const el=document.getElementById('mx'+i); if(!el) return;
   await fillAuto2(i,p,el);
   const pre=el.querySelector('.lyrics');
-  const src=el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Musixmatch (απόσπασμα)')?'Musixmatch 30%':null;
+  const src=el.dataset.src==='stixoi.gr'?'stixoi.gr':el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Musixmatch (απόσπασμα)')?'Musixmatch 30%':null;
   setRow(i, src?'✓ '+src+' (δες παρακάτω)':pre.textContent, !!src);
 }
 async function fillAuto2(i, p, el){
   const pre=el.querySelector('.lyrics'); let msg=[];
+  try{
+    const hits=await stixoiFind(p.title);
+    if(hits.length){ showFrame(el, pre, hits, 0); return; }
+    msg.push('stixoi.gr: δεν βρέθηκε');
+  }catch(e){ msg.push('stixoi.gr: δεν απαντά'); }
   if(lrcOn()){
     try{
       const hit=await lrcLyrics(p.title, p.artist);
@@ -494,7 +527,7 @@ async function fillAuto2(i, p, el){
     }catch(e){ msg.push('LRCLIB: '+(e.name==='AbortError'?'timeout':'δεν απαντά')); }
   }
   if(getMxmKey()){ pre.textContent='Αναζήτηση στο Musixmatch…'; await fillFromMxm(i,p); if(msg.length && pre.textContent.startsWith('Musixmatch:')) pre.textContent=msg.join(' · ')+' · '+pre.textContent; return; }
-  pre.textContent=msg.join(' · ');
+  pre.innerHTML=esc(msg.join(' · '))+` · <a href="${firstResultUrl(p.artist?p.artist+' - '+p.title:p.title)}" target="_blank" rel="noopener">Άνοιγμα 1ου αποτελέσματος ↗</a>`;
 }
 document.getElementById('lrcOn').checked=lrcOn();
 document.getElementById('lrcOn').onchange=e=>{ try{ localStorage.setItem(STORE+'-lrc',e.target.checked?'1':'0'); }catch(_){ window._lrc=e.target.checked; } };
@@ -552,6 +585,25 @@ document.getElementById('mxmTest').onclick=async()=>{
 document.getElementById('buildBtn').onclick=build;
 document.getElementById('order').onchange=()=>{ try{localStorage.setItem(STORE+'-order',document.getElementById('order').value);}catch(e){} if(document.getElementById('matches').innerHTML) build(); };
 try{ const o=localStorage.getItem(STORE+'-order'); if(o) document.getElementById('order').value=o; }catch(e){}
+
+// ---------- Open first result (like searching by hand) ----------
+function firstResultUrl(line){
+  const p=parseLine(line);
+  const extra=document.getElementById('mode').value==='chords'?'στίχοι συγχορδίες':'στίχοι';
+  return 'https://duckduckgo.com/?q='+encodeURIComponent('\\ '+[p.artist,p.title,extra].filter(Boolean).join(' '));
+}
+function listLines(){ return document.getElementById('listInput').value.split('\n').map(l=>l.replace(/^\s*\d+[\.\)]\s*/,'').trim()).filter(Boolean); }
+document.getElementById('openAll').onclick=()=>{
+  const lines=listLines(); const note=document.getElementById('openNote');
+  if(!lines.length){ toast('Γράψε πρώτα τη λίστα'); return; }
+  let opened=0;
+  for(const l of lines){ const w=window.open(firstResultUrl(l),'_blank'); if(w) opened++; else break; }
+  if(opened<lines.length) note.innerHTML=`<b style="color:var(--accent)">Άνοιξαν ${opened} από ${lines.length}.</b> Ο browser μπλόκαρε τα υπόλοιπα: πάτα το εικονίδιο στη γραμμή διεύθυνσης, «Να επιτρέπονται πάντα τα αναδυόμενα» και ξαναπάτα το κουμπί.`;
+  else toast('Άνοιξαν '+opened+' καρτέλες');
+  if(!document.getElementById('matches').innerHTML.includes('match')) build();
+};
+try{ const md=localStorage.getItem(STORE+'-mode'); if(md) document.getElementById('mode').value=md; }catch(e){}
+document.getElementById('mode').onchange=e=>{ try{localStorage.setItem(STORE+'-mode',e.target.value);}catch(_){} if(document.getElementById('matches').innerHTML) build(); };
 
 // ---------- Add-missing queue ----------
 let queue=[], qPos=0;
