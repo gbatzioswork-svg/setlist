@@ -11,26 +11,35 @@ async function getSecret() {
   // cache for 2 hours
   if (_secret && Date.now() - _secretTs < 7200000) return _secret;
 
-  // 1. fetch the musixmatch search page to find the _app bundle URL
+  // 1. fetch the musixmatch search page to find all JS chunk URLs
   const pageRes = await fetch("https://www.musixmatch.com/search", {
     headers: { "User-Agent": UA, Cookie: "mxm_bab=AB" },
   });
   const html = await pageRes.text();
 
-  const appPattern = /src="([^"]*\/_next\/static\/chunks\/pages\/_app-[^"]+\.js)"/g;
-  let m, lastMatch;
-  while ((m = appPattern.exec(html)) !== null) lastMatch = m;
-  if (!lastMatch) throw new Error("_app JS URL not found on musixmatch.com");
+  const srcPattern = /src="([^"]*\/_next\/static\/chunks\/[^"]+\.js)"/g;
+  const chunkUrls = [];
+  let m;
+  while ((m = srcPattern.exec(html)) !== null) chunkUrls.push(m[1]);
+  if (!chunkUrls.length) throw new Error("No JS chunks found on musixmatch.com");
 
-  // 2. fetch that JS bundle and extract the HMAC secret
-  const jsRes = await fetch(lastMatch[1], { headers: { "User-Agent": UA } });
-  const js = await jsRes.text();
-
-  const secretMatch = js.match(/from\(\s*"(.*?)"\s*\.split/);
-  if (!secretMatch) throw new Error("HMAC secret not found in _app bundle");
+  // 2. fetch chunks in parallel and search each for the HMAC secret
+  const secretPattern = /from\(\s*"([A-Za-z0-9+/=]+)"\s*\.split/;
+  const results = await Promise.all(
+    chunkUrls.map(async (url) => {
+      try {
+        const res = await fetch(url, { headers: { "User-Agent": UA } });
+        const js = await res.text();
+        const match = js.match(secretPattern);
+        return match ? match[1] : null;
+      } catch { return null; }
+    })
+  );
+  const encoded = results.find(Boolean);
+  if (!encoded) throw new Error("HMAC secret not found in any chunk (" + chunkUrls.length + " searched)");
 
   // reverse the string, then base64-decode
-  const reversed = secretMatch[1].split("").reverse().join("");
+  const reversed = encoded.split("").reverse().join("");
   _secret = atob(reversed);
   _secretTs = Date.now();
   return _secret;
@@ -82,24 +91,6 @@ export async function onRequest(context) {
       JSON.stringify({ error: "missing ?action= (search | lyrics)" }),
       { status: 400, headers: corsHeaders }
     );
-  }
-
-  // debug endpoint: show what musixmatch.com returns
-  if (action === "debug") {
-    try {
-      const pageRes = await fetch("https://www.musixmatch.com/search", {
-        headers: { "User-Agent": UA, Cookie: "mxm_bab=AB" },
-      });
-      const html = await pageRes.text();
-      // find all script src attributes
-      const srcPattern = /src="([^"]*\.js)"/g;
-      const srcs = [];
-      let sm;
-      while ((sm = srcPattern.exec(html)) !== null) srcs.push(sm[1]);
-      return new Response(JSON.stringify({ status: pageRes.status, scriptCount: srcs.length, scripts: srcs.slice(-20), htmlLen: html.length, hasApp: html.includes('_app'), sample: html.substring(0, 2000) }, null, 2), { headers: corsHeaders });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
-    }
   }
 
   try {
