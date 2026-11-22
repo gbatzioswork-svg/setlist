@@ -86,6 +86,29 @@ export async function onRequest(context) {
   const q = (params.get("q") || "").trim();
   const trackId = params.get("track_id") || "";
 
+  if (action === "test") {
+    try {
+      const secret = await getSecret();
+      const base = "https://www.musixmatch.com/ws/1.1/";
+      const ep = "track.search?app_id=web-desktop-app-v1.0&format=json&q=hello&f_has_lyrics=true&page_size=1";
+      const fullUrl = base + ep;
+      const signature = await sign(fullUrl, secret);
+      const signedUrl = fullUrl + signature;
+      const res = await fetch(signedUrl, { headers: { "User-Agent": UA } });
+      const text = await res.text();
+      return new Response(JSON.stringify({
+        secretLen: secret.length,
+        secretPreview: secret.substring(0, 4) + "...",
+        status: res.status,
+        contentType: res.headers.get("content-type"),
+        responsePreview: text.substring(0, 500),
+        url: fullUrl
+      }, null, 2), { headers: corsHeaders });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500, headers: corsHeaders });
+    }
+  }
+
   if (!action) {
     return new Response(
       JSON.stringify({ error: "missing ?action= (search | lyrics)" }),
@@ -129,10 +152,19 @@ export async function onRequest(context) {
     const fullUrl = base + endpoint;
     const signature = await sign(fullUrl, secret);
 
-    const res = await fetch(fullUrl + signature, {
+    const signedUrl = fullUrl + signature;
+    const res = await fetch(signedUrl, {
       headers: { "User-Agent": UA },
     });
-    const data = await res.json();
+    const text = await res.text();
+    // musixmatch may return XML on error/bad signature
+    if (text.trimStart().startsWith("<")) {
+      return new Response(
+        JSON.stringify({ error: "API returned non-JSON (possibly bad signature)", status: res.status, url: fullUrl }),
+        { status: 502, headers: corsHeaders }
+      );
+    }
+    const data = JSON.parse(text);
     return new Response(JSON.stringify(data), { headers: corsHeaders });
   } catch (e) {
     return new Response(JSON.stringify({ error: e.message }), {
