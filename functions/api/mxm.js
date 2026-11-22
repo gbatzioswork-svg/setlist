@@ -2,6 +2,7 @@
 // Based on https://github.com/Strvm/musicxmatch-api
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const API_BASE = "https://apic-desktop.musixmatch.com/ws/1.1/";
 
 // --- secret extraction (cached per isolate lifetime) ---
 let _secret = null;
@@ -86,45 +87,6 @@ export async function onRequest(context) {
   const q = (params.get("q") || "").trim();
   const trackId = params.get("track_id") || "";
 
-  if (action === "test") {
-    try {
-      const secret = await getSecret();
-      const base = "https://www.musixmatch.com/ws/1.1/";
-      // try multiple hosts
-      const hosts = [
-        "https://apic-desktop.musixmatch.com/ws/1.1/",
-        "https://apic.musixmatch.com/ws/1.1/",
-        "https://www.musixmatch.com/ws/1.1/"
-      ];
-      const ep = "track.search?app_id=web-desktop-app-v1.0&format=json&q=hello&f_has_lyrics=true&page_size=1";
-      const results = [];
-      for (const h of hosts) {
-        const fullUrl = h + ep;
-        const sig = await sign(fullUrl, secret);
-        try {
-          const r = await fetch(fullUrl + sig, { headers: { "User-Agent": UA } });
-          const t = await r.text();
-          results.push({ host: h, status: r.status, ct: r.headers.get("content-type"), preview: t.substring(0, 300) });
-        } catch (e) { results.push({ host: h, error: e.message }); }
-      }
-      return new Response(JSON.stringify({ secretLen: secret.length, results }, null, 2), { headers: corsHeaders });
-      const signature = await sign(fullUrl, secret);
-      const signedUrl = fullUrl + signature;
-      const res = await fetch(signedUrl, { headers: { "User-Agent": UA } });
-      const text = await res.text();
-      return new Response(JSON.stringify({
-        secretLen: secret.length,
-        secretPreview: secret.substring(0, 4) + "...",
-        status: res.status,
-        contentType: res.headers.get("content-type"),
-        responsePreview: text.substring(0, 500),
-        url: fullUrl
-      }, null, 2), { headers: corsHeaders });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: e.message, stack: e.stack }), { status: 500, headers: corsHeaders });
-    }
-  }
-
   if (!action) {
     return new Response(
       JSON.stringify({ error: "missing ?action= (search | lyrics)" }),
@@ -134,7 +96,6 @@ export async function onRequest(context) {
 
   try {
     const secret = await getSecret();
-    const base = "https://www.musixmatch.com/ws/1.1/";
     let endpoint;
 
     if (action === "search") {
@@ -165,18 +126,17 @@ export async function onRequest(context) {
       );
     }
 
-    const fullUrl = base + endpoint;
+    const fullUrl = API_BASE + endpoint;
     const signature = await sign(fullUrl, secret);
 
-    const signedUrl = fullUrl + signature;
-    const res = await fetch(signedUrl, {
+    const res = await fetch(fullUrl + signature, {
       headers: { "User-Agent": UA },
     });
     const text = await res.text();
-    // musixmatch may return XML on error/bad signature
+    // musixmatch may return HTML/XML on error
     if (text.trimStart().startsWith("<")) {
       return new Response(
-        JSON.stringify({ error: "API returned non-JSON (possibly bad signature)", status: res.status, url: fullUrl }),
+        JSON.stringify({ error: "API returned non-JSON", status: res.status }),
         { status: 502, headers: corsHeaders }
       );
     }
