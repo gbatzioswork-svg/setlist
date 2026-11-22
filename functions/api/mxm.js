@@ -90,8 +90,24 @@ export async function onRequest(context) {
     try {
       const secret = await getSecret();
       const base = "https://www.musixmatch.com/ws/1.1/";
+      // try multiple hosts
+      const hosts = [
+        "https://apic-desktop.musixmatch.com/ws/1.1/",
+        "https://apic.musixmatch.com/ws/1.1/",
+        "https://www.musixmatch.com/ws/1.1/"
+      ];
       const ep = "track.search?app_id=web-desktop-app-v1.0&format=json&q=hello&f_has_lyrics=true&page_size=1";
-      const fullUrl = base + ep;
+      const results = [];
+      for (const h of hosts) {
+        const fullUrl = h + ep;
+        const sig = await sign(fullUrl, secret);
+        try {
+          const r = await fetch(fullUrl + sig, { headers: { "User-Agent": UA } });
+          const t = await r.text();
+          results.push({ host: h, status: r.status, ct: r.headers.get("content-type"), preview: t.substring(0, 300) });
+        } catch (e) { results.push({ host: h, error: e.message }); }
+      }
+      return new Response(JSON.stringify({ secretLen: secret.length, results }, null, 2), { headers: corsHeaders });
       const signature = await sign(fullUrl, secret);
       const signedUrl = fullUrl + signature;
       const res = await fetch(signedUrl, { headers: { "User-Agent": UA } });
