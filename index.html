@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setlist & Στίχοι</title>
+<style>
+  :root{--bg:#f6f3ee;--card:#fff;--ink:#1e1b18;--muted:#7a716a;--accent:#b4462b;--line:#e4ddd3;--ok:#2f7d4f;--warn:#b07a12}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:20px;flex-wrap:wrap;background:var(--card)}
+  header h1{margin:0;font-size:20px;letter-spacing:.3px}
+  header h1 span{color:var(--accent)}
+  nav{display:flex;gap:6px}
+  nav button{border:1px solid var(--line);background:transparent;padding:8px 14px;border-radius:999px;cursor:pointer;font-size:14px;color:var(--ink)}
+  nav button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  main{max-width:1100px;margin:0 auto;padding:24px}
+  .panel{display:none}.panel.active{display:block}
+  .grid{display:grid;grid-template-columns:340px 1fr;gap:24px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:12px 0 6px}
+  input,textarea,select{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fffdfa;color:var(--ink)}
+  textarea{resize:vertical}
+  .btn{border:none;background:var(--accent);color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:500}
+  .btn.small{padding:6px 10px;font-size:13px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .muted{color:var(--muted);font-size:13px}
+  .songlist{list-style:none;margin:10px 0 0;padding:0;max-height:520px;overflow:auto}
+  .songlist li{padding:10px 8px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;cursor:pointer;border-radius:6px}
+  .songlist li:hover{background:#faf6f0}
+  .songlist .k{font-weight:700;color:var(--accent);white-space:nowrap}
+  .grid>*{min-width:0}
+  .match{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;margin-bottom:6px;font-size:14px;background:#faf6f0}
+  .match>span:first-child{flex:1 1 200px;min-width:0}
+  .queuebar{background:#fdf3e1;border:1px solid #f0dcb4;color:var(--warn);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .match.miss{background:#fdf3e1;color:var(--warn)}
+  .match .ok{color:var(--ok);font-weight:600}
+  /* Output */
+  #output{margin-top:24px}
+  .song{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:28px 32px;margin-bottom:18px}
+  .song .top{display:flex;align-items:baseline;justify-content:space-between;gap:16px;border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:16px}
+  .song .num{color:var(--muted);font-weight:600;margin-right:8px}
+  .song h2{margin:0;font-size:1.4em}
+  .song .artist{color:var(--muted);font-size:.85em;margin-top:2px}
+  .keybadge{font-size:1.6em;font-weight:800;color:#fff;background:var(--accent);padding:4px 14px;border-radius:8px;white-space:nowrap}
+  .lyrics{white-space:pre-wrap;line-height:1.55;font-size:1em;font-family:inherit;margin:0}
+  .toolbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;opacity:0;transition:.3s;pointer-events:none}
+  .toast.show{opacity:1}
+  @media print{
+    header,.no-print,.toolbar{display:none!important}
+    body{background:#fff}
+    main{padding:0;max-width:none}
+    .panel{display:none!important}
+    #setlistPanel{display:block!important}
+    #setlistPanel>.grid{display:none!important}
+    .song{border:none;padding:0 0 18px;border-radius:0}
+    .keybadge{color:#000;background:none;border:2px solid #000}
+    body.pagebreak .song{page-break-after:always}
+  }
+</style>
+</head>
+<body>
+<header class="no-print">
+  <h1>Setlist <span>&</span> Στίχοι</h1>
+  <nav>
+    <button data-tab="setlistPanel" class="active">Setlist</button>
+    <button data-tab="libraryPanel">Βιβλιοθήκη</button>
+    <button data-tab="backupPanel">Ρυθμίσεις</button>
+  </nav>
+</header>
+
+<main>
+  <!-- SETLIST -->
+  <section id="setlistPanel" class="panel active">
+    <div class="grid no-print">
+      <div class="card">
+        <label for="listInput">Λίστα τραγουδιών (ένα ανά γραμμή)</label>
+        <textarea id="listInput" rows="14" placeholder="π.χ.&#10;Τίτλος τραγουδιού 1&#10;Τίτλος τραγουδιού 2&#10;..."></textarea>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="buildBtn">Δημιουργία</button>
+          <button class="btn ghost" id="clearList">Καθαρισμός</button>
+        </div>
+        <label for="order">Μορφή γραμμής</label>
+        <select id="order">
+          <option value="at">Καλλιτέχνης - Τίτλος</option>
+          <option value="ta">Τίτλος - Καλλιτέχνης</option>
+        </select>
+        <p class="muted">Η αναζήτηση αγνοεί τόνους και κεφαλαία. Αρκεί και σκέτος ο τίτλος.</p>
+      </div>
+      <div class="card">
+        <label>Αποτελέσματα αντιστοίχισης</label>
+        <div id="matches"><p class="muted">Γράψε μια λίστα και πάτα «Δημιουργία».</p></div>
+      </div>
+    </div>
+
+    <div class="toolbar no-print" id="outToolbar" style="display:none">
+      <div class="row">
+        <button class="btn" onclick="window.print()">Εκτύπωση / PDF</button>
+        <label style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);display:flex;gap:6px;align-items:center;width:auto">
+          <input type="checkbox" id="pageBreak" style="width:auto" checked> Κάθε τραγούδι σε νέα σελίδα
+        </label>
+        <span class="muted">Μέγεθος γραμμάτων</span>
+        <button class="btn ghost small" id="fontDown">A−</button>
+        <button class="btn ghost small" id="fontUp">A+</button>
+      </div>
+    </div>
+    <div id="output"></div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section id="libraryPanel" class="panel">
+    <div class="grid">
+      <div class="card">
+        <label for="search">Αναζήτηση</label>
+        <input id="search" placeholder="Τίτλος ή καλλιτέχνης…">
+        <p class="muted" id="count"></p>
+        <ul class="songlist" id="songList"></ul>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <strong id="formTitle">Νέο τραγούδι</strong>
+          <button class="btn ghost small" id="newBtn">+ Νέο</button>
+        </div>
+        <div id="queueBar" class="queuebar" style="display:none"></div>
+        <input type="hidden" id="songId">
+        <div class="row" style="justify-content:space-between;align-items:flex-end">
+          <label for="title">Τίτλος</label>
+          <button class="btn ghost small" id="swapBtn" title="Αντάλλαξε τίτλο και καλλιτέχνη" style="margin-bottom:4px">⇄ τίτλος / καλλιτέχνης</button>
+        </div>
+        <input id="title">
+        <div class="row" style="gap:12px">
+          <div style="flex:2;min-width:180px">
+            <label for="artist">Καλλιτέχνης (προαιρετικό)</label>
+            <input id="artist">
+          </div>
+          <div style="flex:1;min-width:120px">
+            <label for="key">Τονικότητα</label>
+            <input id="key" list="keys" placeholder="π.χ. Am, Ρε ματζόρε">
+            <datalist id="keys"></datalist>
+          </div>
+        </div>
+        <label for="lyrics">Στίχοι</label>
+        <textarea id="lyrics" rows="16" placeholder="Γράψε ή επικόλλησε τους στίχους (και συγχορδίες, αν θες)."></textarea>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="saveBtn">Αποθήκευση</button>
+          <button class="btn ghost" id="deleteBtn" style="display:none">Διαγραφή</button>
+          <a class="muted" id="lyricsSearch" target="_blank" rel="noopener" style="display:none">Αναζήτηση στίχων ↗</a>
+          <a class="muted" id="keySearch" target="_blank" rel="noopener" style="display:none">Αναζήτηση τονικότητας ↗</a>
+          <button class="btn ghost small" id="autoKeyBtn" style="display:none">Βρες τονικότητα (GetSongBPM)</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BACKUP -->
+  <section id="backupPanel" class="panel">
+    <div class="card" style="max-width:640px;margin-bottom:18px">
+      <strong>LRCLIB (δωρεάν, χωρίς λογαριασμό)</strong>
+      <p class="muted">Ανοιχτή βάση στίχων που ανεβάζουν οι χρήστες της. Φέρνει ολόκληρους στίχους, αλλά δεν έχουν άδεια από τους δημιουργούς. Χρησιμοποίησέ την μόνο για προσωπική χρήση.</p>
+      <div class="row">
+        <label style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);display:flex;gap:8px;align-items:center;width:auto">
+          <input type="checkbox" id="lrcOn" style="width:auto"> Αυτόματη αναζήτηση στο LRCLIB
+        </label>
+        <button class="btn ghost small" id="lrcTest">Δοκιμή</button>
+      </div>
+      <p class="muted" id="lrcStatus"></p>
+    </div>
+    <div class="card" style="max-width:640px;margin-bottom:18px">
+      <strong>GetSongBPM (αυτόματη τονικότητα)</strong>
+      <p class="muted">Δωρεάν. Φτιάξε λογαριασμό στο <a href="https://getsongbpm.com/api" target="_blank" rel="noopener">getsongbpm.com/api</a> και βάλε εδώ το API key. Τα τραγούδια χωρίς τονικότητα θα παίρνουν αυτόματα μία (σημειωμένη με «auto»).</p>
+      <label for="gsbKey">API key</label>
+      <div class="row">
+        <input id="gsbKey" type="password" placeholder="π.χ. 1a2b3c…" style="flex:1;min-width:200px">
+        <button class="btn" id="gsbSave">Αποθήκευση</button>
+        <button class="btn ghost" id="gsbTest">Δοκιμή</button>
+      </div>
+      <p class="muted" id="gsbStatus"></p>
+    </div>
+    <div class="card" style="max-width:640px;margin-bottom:18px">
+      <strong>Musixmatch (αυτόματοι στίχοι)</strong>
+      <p class="muted">Βάλε το δωρεάν API key σου από το developer.musixmatch.com. Τα τραγούδια που δεν υπάρχουν στη βιβλιοθήκη θα φέρνονται αυτόματα. Στο δωρεάν πλάνο φέρνει περίπου το 30% των στίχων.</p>
+      <label for="mxmKey">API key</label>
+      <div class="row">
+        <input id="mxmKey" type="password" placeholder="π.χ. 1a2b3c…" style="flex:1;min-width:200px">
+        <button class="btn" id="mxmSave">Αποθήκευση</button>
+        <button class="btn ghost" id="mxmTest">Δοκιμή</button>
+      </div>
+      <p class="muted" id="mxmStatus"></p>
+    </div>
+    <div class="card" style="max-width:640px">
+      <strong>Αντίγραφο ασφαλείας</strong>
+      <p class="muted">Η βιβλιοθήκη αποθηκεύεται μόνο σε αυτόν τον browser. Αν καθαρίσεις τα δεδομένα του ή αλλάξεις συσκευή, χάνεται. Κατέβαζε αντίγραφο συχνά.</p>
+      <div class="row">
+        <button class="btn" id="exportBtn">Λήψη αντιγράφου (.json)</button>
+        <label class="btn ghost" style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);width:auto">
+          Επαναφορά από αρχείο
+          <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+        </label>
+      </div>
+      <p class="muted" style="margin-top:14px">Η επαναφορά συγχωνεύει τα τραγούδια με όσα έχεις ήδη. Αν ένα τραγούδι υπάρχει ήδη, κρατάει την έκδοση από το αρχείο.</p>
+    </div>
+  </section>
+</main>
+
+<p class="muted no-print" style="text-align:center;font-size:12px;margin:24px 0">Τονικότητες: <a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM.com</a></p>
+<div class="toast" id="toast"></div>
+
+<script>
+const STORE = 'setlist-library-v1';
+let songs = [];
+let mem = null; // fallback if storage unavailable
+let fontScale = 1;
+
+function load(){
+  try { songs = JSON.parse(localStorage.getItem(STORE) || '[]'); }
+  catch(e){ songs = mem || []; }
+}
+function persist(){
+  try { localStorage.setItem(STORE, JSON.stringify(songs)); }
+  catch(e){ mem = songs; toast('Δεν αποθηκεύεται μόνιμα εδώ — κατέβασε αντίγραφο!'); }
+}
+function toast(msg){
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+// Accent/case-insensitive normalisation for Greek + Latin
+function norm(s){
+  return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .toLowerCase().replace(/ς/g,'σ').replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
+}
+function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const uid = ()=> Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+
+// Key suggestions
+(function(){
+  const notes=['C','C#','Db','D','D#','Eb','E','F','F#','Gb','G','G#','Ab','A','A#','Bb','B'];
+  const dl=document.getElementById('keys');
+  notes.forEach(n=>{ dl.insertAdjacentHTML('beforeend',`<option value="${n}"><option value="${n}m">`); });
+  ['Ντο','Ρε','Μι','Φα','Σολ','Λα','Σι'].forEach(n=>{
+    dl.insertAdjacentHTML('beforeend',`<option value="${n} ματζόρε"><option value="${n} μινόρε">`);
+  });
+})();
+
+// Tabs
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===b.dataset.tab));
+  if(b.dataset.tab==='libraryPanel') renderList();
+});
+
+// ---------- Library ----------
+function renderList(){
+  const q = norm(document.getElementById('search').value);
+  const list = songs.filter(s=> !q || norm(s.title+' '+(s.artist||'')).includes(q))
+                    .sort((a,b)=>a.title.localeCompare(b.title,'el'));
+  document.getElementById('count').textContent = `${songs.length} τραγούδια στη βιβλιοθήκη`;
+  document.getElementById('songList').innerHTML = list.map(s=>
+    `<li data-id="${s.id}"><span>${esc(s.title)}${s.artist?` <span class="muted">— ${esc(s.artist)}</span>`:''}</span><span class="k">${esc(s.key||'')}</span></li>`
+  ).join('') || '<li class="muted" style="cursor:default">Δεν υπάρχουν τραγούδια ακόμα.</li>';
+  document.querySelectorAll('#songList li[data-id]').forEach(li=>li.onclick=()=>editSong(li.dataset.id));
+}
+function fillForm(s){
+  document.getElementById('songId').value = s?.id||'';
+  document.getElementById('title').value = s?.title||'';
+  document.getElementById('artist').value = s?.artist||'';
+  document.getElementById('key').value = s?.key||'';
+  document.getElementById('lyrics').value = s?.lyrics||'';
+  document.getElementById('formTitle').textContent = s?.id ? 'Επεξεργασία' : 'Νέο τραγούδι';
+  document.getElementById('deleteBtn').style.display = s?.id ? '' : 'none';
+  updateKeyLink();
+}
+function editSong(id){ fillForm(songs.find(s=>s.id===id)); }
+function updateKeyLink(){
+  const t=document.getElementById('title').value.trim(), a=document.getElementById('artist').value.trim();
+  const link=document.getElementById('keySearch');
+  const ll=document.getElementById('lyricsSearch');
+  if(t){ link.style.display=''; link.href='https://www.google.com/search?q='+encodeURIComponent(`${t} ${a} τονικότητα συγχορδίες`);
+         ll.style.display=''; ll.href='https://www.google.com/search?q='+encodeURIComponent(`${t} ${a} στίχοι`); }
+  else { link.style.display='none'; ll.style.display='none'; }
+  document.getElementById('autoKeyBtn').style.display=(t&&getGsbKey())?'':'none';
+}
+document.getElementById('title').oninput = updateKeyLink;
+document.getElementById('artist').oninput = updateKeyLink;
+document.getElementById('search').oninput = renderList;
+document.getElementById('newBtn').onclick = ()=>fillForm(null);
+document.getElementById('saveBtn').onclick = ()=>{
+  const title=document.getElementById('title').value.trim();
+  if(!title){ toast('Βάλε τίτλο'); return; }
+  const id=document.getElementById('songId').value || uid();
+  const data={id,title,artist:document.getElementById('artist').value.trim(),
+    key:document.getElementById('key').value.trim(),lyrics:document.getElementById('lyrics').value.replace(/\s+$/,''),updated:Date.now()};
+  const i=songs.findIndex(s=>s.id===id);
+  if(i>=0) songs[i]=data; else songs.push(data);
+  persist(); renderList(); fillForm(data); toast('Αποθηκεύτηκε');
+  if(queue.length){ qPos++; showQueueItem(); return; }
+  if(document.getElementById('output').innerHTML) build(); // refresh setlist if open
+};
+document.getElementById('deleteBtn').onclick = ()=>{
+  const id=document.getElementById('songId').value; if(!id) return;
+  const s=songs.find(x=>x.id===id);
+  if(!s || document.getElementById('deleteBtn').dataset.armed!==id){
+    document.getElementById('deleteBtn').dataset.armed=id;
+    document.getElementById('deleteBtn').textContent='Σίγουρα; Πάτα ξανά';
+    setTimeout(()=>{document.getElementById('deleteBtn').dataset.armed='';document.getElementById('deleteBtn').textContent='Διαγραφή';},3000);
+    return;
+  }
+  songs=songs.filter(x=>x.id!==id); persist(); renderList(); fillForm(null); toast('Διαγράφηκε');
+  document.getElementById('deleteBtn').dataset.armed='';document.getElementById('deleteBtn').textContent='Διαγραφή';
+};
+
+// ---------- Matching ----------
+// Split "A - B" into {title, artist} according to the chosen order
+function parseLine(line){
+  const parts=line.split(/\s*[-–—]\s+|\s+[-–—]\s*/);
+  if(parts.length<2) return {title:line.trim(), artist:''};
+  const first=parts[0].trim(), rest=parts.slice(1).join(' - ').trim();
+  const order=document.getElementById('order').value;
+  return order==='at' ? {artist:first, title:rest} : {title:first, artist:rest};
+}
+function findSong(line){
+  const p=parseLine(line);
+  const t=norm(p.title), a=norm(p.artist);
+  if(t){
+    const m=songs.filter(s=>norm(s.title)===t);
+    if(m.length) return (a && m.find(s=>norm(s.artist).includes(a)||a.includes(norm(s.artist))&&s.artist)) || m[0];
+  }
+  return findByTitle(t) || findByTitle(norm(line));
+}
+function findByTitle(q){
+  if(!q) return null;
+  let exact=songs.find(s=>norm(s.title)===q); if(exact) return exact;
+  const starts=songs.filter(s=>norm(s.title).startsWith(q)); if(starts.length) return starts[0];
+  const contains=songs.filter(s=>norm(s.title).includes(q) || q.includes(norm(s.title)) && norm(s.title).length>3);
+  if(contains.length) return contains[0];
+  // word overlap
+  const qw=new Set(q.split(' ').filter(w=>w.length>2)); let best=null,score=0;
+  songs.forEach(s=>{ const w=norm(s.title).split(' ').filter(x=>x.length>2); const hit=w.filter(x=>qw.has(x)).length;
+    const sc=hit/Math.max(w.length,qw.size); if(sc>score){score=sc;best=s;} });
+  return score>=0.6?best:null;
+}
+
+function build(){
+  load();
+  const lines=document.getElementById('listInput').value.split('\n').map(l=>l.replace(/^\s*\d+[\.\)]\s*/,'').trim()).filter(Boolean);
+  const m=document.getElementById('matches'), out=document.getElementById('output');
+  if(!lines.length){ m.innerHTML='<p class="muted">Η λίστα είναι άδεια.</p>'; out.innerHTML=''; document.getElementById('outToolbar').style.display='none'; return; }
+  const res=lines.map(l=>({line:l,song:findSong(l)}));
+  const missing=res.filter(r=>!r.song).map(r=>r.line);
+  const auto=getMxmKey()||lrcOn();
+  m.innerHTML=(missing.length?`<div class="queuebar"><span>${missing.length} από ${res.length} δεν είναι στη βιβλιοθήκη${auto?' — γίνεται αυτόματη αναζήτηση':''}.</span><button class="btn small" id="addAll">Πρόσθεσέ τα ένα-ένα →</button></div>`:'')+
+  (missing.length&&!auto?`<div class="queuebar"><span>Η αυτόματη αναζήτηση είναι κλειστή.</span><button class="btn small" id="goSettings">Ενεργοποίηση στις Ρυθμίσεις →</button></div>`:'')+
+  res.map((r,i)=> r.song
+    ? `<div class="match"><span>${i+1}. ${esc(r.line)}</span><span class="ok">✓ Βιβλιοθήκη · ${esc(r.song.key||'χωρίς τονικότητα')}</span></div>`
+    : `<div class="match miss" id="mr${i}"><span>${i+1}. ${esc(r.line)} — <span class="st">${auto?'αναζήτηση…':'δεν είναι στη βιβλιοθήκη'}</span></span><button class="btn small" data-i="${i}">Προσθήκη</button></div>`
+  ).join('');
+  const gs=document.getElementById('goSettings'); if(gs) gs.onclick=()=>document.querySelector('nav button[data-tab="backupPanel"]').click();
+  m.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>startQueue([res[+b.dataset.i].line]));
+  const all=document.getElementById('addAll'); if(all) all.onclick=()=>startQueue(missing);
+  let n=0; const key=getMxmKey()||lrcOn();
+  out.innerHTML=res.map((r,i)=>{ n++; const s=r.song;
+    if(!s){ const p=parseLine(r.line);
+      return `<article class="song" id="mx${i}" style="font-size:${fontScale}em"><div class="top"><div><h2><span class="num">${n}.</span>${esc(p.title)}</h2><div class="artist">${esc(p.artist)}</div></div><div class="keybadge" id="kb${i}" style="background:#bbb">?</div></div><pre class="lyrics muted">${key?'Αναζήτηση…':'Δεν υπάρχει στη βιβλιοθήκη. Ενεργοποίησε το LRCLIB ή βάλε Musixmatch key στις «Ρυθμίσεις» για αυτόματους στίχους.'}</pre></article>`; }
+    return `<article class="song" style="font-size:${fontScale}em"><div class="top"><div><h2><span class="num">${n}.</span>${esc(s.title)}</h2>${s.artist?`<div class="artist">${esc(s.artist)}</div>`:''}</div><div class="keybadge" id="kb${i}"${s.key?'':' style="background:#bbb"'}>${esc(s.key||'?')}</div></div><pre class="lyrics">${esc(s.lyrics||'')}</pre></article>`;
+  }).join('');
+  document.getElementById('outToolbar').style.display='';
+  if(key) res.forEach((r,i)=>{ if(!r.song) fillAuto(i, parseLine(r.line)); });
+  if(getGsbKey()) autoKeys(res);
+}
+
+// ---------- GetSongBPM (key) ----------
+function getGsbKey(){ try{ return localStorage.getItem(STORE+'-gsb')||''; }catch(e){ return window._gsb||''; } }
+const GSB_HOSTS=['https://api.getsong.co','https://api.getsongbpm.com'];
+async function gsbFetch(path){
+  let last;
+  for(const h of GSB_HOSTS){
+    try{
+      const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),10000);
+      const r=await fetch(h+path+(path.includes('?')?'&':'?')+'api_key='+encodeURIComponent(getGsbKey()),{signal:ctl.signal});
+      clearTimeout(t);
+      if(r.status===401||r.status===403) throw new Error('Λάθος ή ανενεργό API key');
+      if(!r.ok) throw new Error('Σφάλμα '+r.status);
+      return await r.json();
+    }catch(e){ last=e; if(e.message.startsWith('Λάθος')) throw e; }
+  }
+  throw new Error(last&&last.name==='AbortError'?'timeout':(last&&last.message==='Failed to fetch'?'δεν απαντά':(last?last.message:'σφάλμα')));
+}
+const gsbCache={};
+async function gsbKeyFor(title, artist){
+  const ck=norm(title)+'|'+norm(artist); if(ck in gsbCache) return gsbCache[ck];
+  const lookup=artist?`song:${title} artist:${artist}`:title;
+  const d=await gsbFetch('/search/?type='+(artist?'both':'song')+'&lookup='+encodeURIComponent(lookup));
+  const list=Array.isArray(d)?d:(Array.isArray(d?.search)?d.search:[]);
+  const t=norm(title), a=norm(artist);
+  const score=x=>{ const xt=norm(x.song_title||x.title), xa=norm((x.artist&&(x.artist.name||x.artist[0]?.name))||'');
+    return (xt===t?4:xt.includes(t)||t.includes(xt)?2:0)+(a&&xa&&(xa.includes(a)||a.includes(xa))?3:0); };
+  const best=list.filter(x=>x&&x.key_of).sort((x,y)=>score(y)-score(x))[0];
+  const res=best&&score(best)>=4?best.key_of:null;
+  gsbCache[ck]=res; return res;
+}
+async function autoKeys(res){
+  for(let i=0;i<res.length;i++){
+    const r=res[i]; if(r.song&&r.song.key) continue;
+    const p=r.song?{title:r.song.title,artist:r.song.artist}:parseLine(r.line);
+    const b=document.getElementById('kb'+i); if(!b) continue;
+    try{ const k=await gsbKeyFor(p.title,p.artist);
+      if(k){ b.style.background=''; b.innerHTML=esc(k)+'<span style="font-size:.4em;font-weight:600;margin-left:6px;vertical-align:middle">auto</span>'; b.title='Από GetSongBPM — έλεγξέ την'; }
+      else b.title='Δεν βρέθηκε στο GetSongBPM';
+    }catch(e){ b.title='GetSongBPM: '+e.message; if(e.message.startsWith('Λάθος')) break; }
+  }
+}
+document.getElementById('gsbKey').value=getGsbKey();
+document.getElementById('gsbSave').onclick=()=>{
+  const v=document.getElementById('gsbKey').value.trim();
+  try{ localStorage.setItem(STORE+'-gsb',v); }catch(e){ window._gsb=v; }
+  toast('Το key αποθηκεύτηκε'); updateKeyLink();
+};
+document.getElementById('gsbTest').onclick=async()=>{
+  document.getElementById('gsbSave').click();
+  const st=document.getElementById('gsbStatus'); st.textContent='Δοκιμή…';
+  try{ const k=await gsbKeyFor('Ρόζα','Δημήτρης Μητροπάνος');
+    st.textContent=k?'✓ Λειτουργεί. «Ρόζα» (Μητροπάνος): '+k:'✓ Το key λειτουργεί, αλλά δεν βρέθηκε το δοκιμαστικό τραγούδι.'; }
+  catch(e){ st.textContent='✗ '+e.message; }
+};
+document.getElementById('autoKeyBtn').onclick=async()=>{
+  const t=document.getElementById('title').value.trim(), a=document.getElementById('artist').value.trim();
+  const b=document.getElementById('autoKeyBtn'); b.textContent='Αναζήτηση…';
+  try{ const k=await gsbKeyFor(t,a); if(k){ document.getElementById('key').value=k; toast('Τονικότητα: '+k); } else toast('Δεν βρέθηκε στο GetSongBPM'); }
+  catch(e){ toast('GetSongBPM: '+e.message); }
+  b.textContent='Βρες τονικότητα (GetSongBPM)';
+};
+
+// ---------- LRCLIB ----------
+function lrcOn(){ try{ return localStorage.getItem(STORE+'-lrc')==='1'; }catch(e){ return !!window._lrc; } }
+async function lrcSearch(params){
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),10000);
+  try{
+    const r=await fetch('https://lrclib.net/api/search?'+new URLSearchParams(params),{signal:ctl.signal});
+    if(!r.ok) throw new Error('LRCLIB σφάλμα '+r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+function lrcPick(list, title, artist){
+  const ok=(list||[]).filter(x=>!x.instrumental && (x.plainLyrics||x.syncedLyrics));
+  if(!ok.length) return null;
+  const t=norm(title), a=norm(artist);
+  const score=x=>(norm(x.trackName)===t?4:norm(x.trackName).includes(t)?2:0)+(a&&norm(x.artistName).includes(a)?3:0)+(x.plainLyrics?1:0);
+  return ok.sort((x,y)=>score(y)-score(x))[0];
+}
+async function lrcLyrics(title, artist){
+  const tries=[];
+  if(artist) tries.push({track_name:title, artist_name:artist});
+  tries.push({q:(title+' '+(artist||'')).trim()});
+  tries.push({track_name:title});
+  for(const p of tries){
+    const hit=lrcPick(await lrcSearch(p), title, artist);
+    if(hit && norm(hit.trackName).includes(norm(title).split(' ')[0])) return hit;
+  }
+  return null;
+}
+function plainOf(hit){
+  if(hit.plainLyrics) return hit.plainLyrics.trim();
+  return (hit.syncedLyrics||'').replace(/^\[[^\]]*\]\s?/gm,'').trim();
+}
+function setRow(i, text, ok){
+  const r=document.getElementById('mr'+i); if(!r) return;
+  r.querySelector('.st').textContent=text;
+  if(ok){ r.classList.remove('miss'); r.querySelector('.st').className='st ok'; }
+}
+async function fillAuto(i, p){
+  const el=document.getElementById('mx'+i); if(!el) return;
+  await fillAuto2(i,p,el);
+  const pre=el.querySelector('.lyrics');
+  const src=el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Musixmatch (απόσπασμα)')?'Musixmatch 30%':null;
+  setRow(i, src?'✓ '+src+' (δες παρακάτω)':pre.textContent, !!src);
+}
+async function fillAuto2(i, p, el){
+  const pre=el.querySelector('.lyrics'); let msg=[];
+  if(lrcOn()){
+    try{
+      const hit=await lrcLyrics(p.title, p.artist);
+      if(hit){
+        pre.classList.remove('muted'); pre.textContent=plainOf(hit);
+        el.insertAdjacentHTML('beforeend',`<p class="muted no-print" style="font-size:12px;margin-top:10px">Από LRCLIB: ${esc(hit.trackName)} — ${esc(hit.artistName)} · <a href="#" data-save="${i}">Αποθήκευση στη βιβλιοθήκη (για να βάλεις τονικότητα)</a></p>`);
+        el.querySelector('[data-save]').onclick=e=>{ e.preventDefault();
+          document.querySelector('nav button[data-tab="libraryPanel"]').click();
+          fillForm({title:p.title, artist:p.artist||hit.artistName, lyrics:plainOf(hit)});
+          document.getElementById('key').focus(); };
+        return;
+      }
+      msg.push('LRCLIB: δεν βρέθηκε');
+    }catch(e){ msg.push('LRCLIB: '+(e.name==='AbortError'?'timeout':'δεν απαντά')); }
+  }
+  if(getMxmKey()){ pre.textContent='Αναζήτηση στο Musixmatch…'; await fillFromMxm(i,p); if(msg.length && pre.textContent.startsWith('Musixmatch:')) pre.textContent=msg.join(' · ')+' · '+pre.textContent; return; }
+  pre.textContent=msg.join(' · ');
+}
+document.getElementById('lrcOn').checked=lrcOn();
+document.getElementById('lrcOn').onchange=e=>{ try{ localStorage.setItem(STORE+'-lrc',e.target.checked?'1':'0'); }catch(_){ window._lrc=e.target.checked; } };
+document.getElementById('lrcTest').onclick=async()=>{
+  const st=document.getElementById('lrcStatus'); st.textContent='Δοκιμή…';
+  try{ const h=await lrcLyrics('Σώμα μου','Νότης Σφακιανάκης');
+    st.textContent=h?'✓ Λειτουργεί. Βρέθηκε: '+h.trackName+' — '+h.artistName:'✓ Το LRCLIB απαντά, αλλά δεν έχει το δοκιμαστικό τραγούδι.'; }
+  catch(e){ st.textContent='✗ Δεν απαντά ('+e.message+')'; }
+};
+
+// ---------- Musixmatch (official API, JSONP) ----------
+function getMxmKey(){ try{ return localStorage.getItem(STORE+'-mxm')||''; }catch(e){ return window._mxm||''; } }
+let jpN=0;
+function jsonp(url, ms=10000){
+  return new Promise((ok,fail)=>{
+    const cb='_mxcb'+(jpN++), sc=document.createElement('script');
+    const done=()=>{ delete window[cb]; sc.remove(); clearTimeout(t); };
+    const t=setTimeout(()=>{ done(); fail(new Error('timeout')); }, ms);
+    window[cb]=d=>{ done(); ok(d); };
+    sc.onerror=()=>{ done(); fail(new Error('network')); };
+    sc.src=url+'&format=jsonp&callback='+cb; document.head.appendChild(sc);
+  });
+}
+async function mxmLyrics(title, artist){
+  const u='https://api.musixmatch.com/ws/1.1/matcher.lyrics.get?apikey='+encodeURIComponent(getMxmKey())+
+    '&q_track='+encodeURIComponent(title)+(artist?'&q_artist='+encodeURIComponent(artist):'');
+  const d=await jsonp(u); const code=d?.message?.header?.status_code;
+  if(code!==200) throw new Error(code===401?'Λάθος API key':code===404?'Δεν βρέθηκε στο Musixmatch':code===402?'Τέλος ημερήσιου ορίου':'Σφάλμα '+code);
+  return d.message.body.lyrics;
+}
+async function fillFromMxm(i, p){
+  const el=document.getElementById('mx'+i); if(!el) return;
+  const pre=el.querySelector('.lyrics');
+  try{
+    const L=await mxmLyrics(p.title, p.artist);
+    pre.classList.remove('muted');
+    pre.textContent=(L.lyrics_body||'').trim();
+    el.insertAdjacentHTML('beforeend',
+      `<p class="muted" style="font-size:12px;margin-top:10px">Στίχοι: Musixmatch (απόσπασμα)${L.lyrics_copyright?' · '+esc(L.lyrics_copyright.trim()):''}</p>`+
+      (L.pixel_tracking_url?`<img src="${esc(L.pixel_tracking_url)}" alt="" width="1" height="1" style="position:absolute">`:''));
+  }catch(e){ pre.textContent='Musixmatch: '+(e.message==='network'?'δεν απαντά (έλεγξε το API key)':e.message); }
+}
+document.getElementById('mxmKey').value=getMxmKey();
+document.getElementById('mxmSave').onclick=()=>{
+  const v=document.getElementById('mxmKey').value.trim();
+  try{ localStorage.setItem(STORE+'-mxm',v); }catch(e){ window._mxm=v; }
+  toast('Το key αποθηκεύτηκε');
+};
+document.getElementById('mxmTest').onclick=async()=>{
+  document.getElementById('mxmSave').click();
+  const st=document.getElementById('mxmStatus'); st.textContent='Δοκιμή…';
+  try{ const L=await mxmLyrics('Σώμα μου','Νότης Σφακιανάκης'); st.textContent='✓ Λειτουργεί. Πρώτη γραμμή: '+(L.lyrics_body||'').split('\n')[0]; }
+  catch(e){ st.textContent='✗ '+e.message; }
+};
+document.getElementById('buildBtn').onclick=build;
+document.getElementById('order').onchange=()=>{ try{localStorage.setItem(STORE+'-order',document.getElementById('order').value);}catch(e){} if(document.getElementById('matches').innerHTML) build(); };
+try{ const o=localStorage.getItem(STORE+'-order'); if(o) document.getElementById('order').value=o; }catch(e){}
+
+// ---------- Add-missing queue ----------
+let queue=[], qPos=0;
+function startQueue(lines){
+  queue=lines; qPos=0;
+  document.querySelector('nav button[data-tab="libraryPanel"]').click();
+  showQueueItem();
+}
+function showQueueItem(){
+  const bar=document.getElementById('queueBar');
+  if(qPos>=queue.length){ endQueue(true); return; }
+  const p=parseLine(queue[qPos]);
+  fillForm({title:p.title, artist:p.artist});
+  bar.style.display='';
+  bar.innerHTML=`<span>Προσθήκη ${qPos+1} από ${queue.length}</span><span class="row"><button class="btn ghost small" id="qSkip">Παράλειψη</button><button class="btn ghost small" id="qStop">Τέλος</button></span>`;
+  document.getElementById('qSkip').onclick=()=>{qPos++;showQueueItem();};
+  document.getElementById('qStop').onclick=()=>endQueue(true);
+  document.getElementById('key').focus();
+}
+function endQueue(back){
+  queue=[]; qPos=0; document.getElementById('queueBar').style.display='none';
+  if(back){ document.querySelector('nav button[data-tab="setlistPanel"]').click(); build(); }
+}
+document.getElementById('swapBtn').onclick=()=>{
+  const t=document.getElementById('title'), a=document.getElementById('artist');
+  [t.value,a.value]=[a.value,t.value]; updateKeyLink();
+};
+document.getElementById('clearList').onclick=()=>{document.getElementById('listInput').value='';document.getElementById('matches').innerHTML='';document.getElementById('output').innerHTML='';document.getElementById('outToolbar').style.display='none';};
+document.getElementById('pageBreak').onchange=e=>document.body.classList.toggle('pagebreak',e.target.checked);
+document.body.classList.add('pagebreak');
+document.getElementById('fontUp').onclick=()=>{fontScale=Math.min(2,fontScale+0.1);build();};
+document.getElementById('fontDown').onclick=()=>{fontScale=Math.max(0.6,fontScale-0.1);build();};
+
+// ---------- Backup ----------
+document.getElementById('exportBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify({app:'setlist',version:1,songs},null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='setlist-library-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+document.getElementById('importFile').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result); const inc=Array.isArray(d)?d:d.songs; if(!Array.isArray(inc)) throw 0;
+      let added=0; inc.forEach(s=>{ if(!s||!s.title) return; s.id=s.id||uid();
+        const i=songs.findIndex(x=>x.id===s.id||norm(x.title)===norm(s.title)&&norm(x.artist)===norm(s.artist));
+        if(i>=0) songs[i]={...songs[i],...s,id:songs[i].id}; else {songs.push(s);added++;} });
+      persist(); renderList(); toast(`Επαναφορά: ${inc.length} τραγούδια (${added} νέα)`);
+    }catch(err){ toast('Μη έγκυρο αρχείο'); }
+    e.target.value='';
+  }; r.readAsText(f);
+};
+
+load(); renderList();
+</script>
+</body>
+</html>
