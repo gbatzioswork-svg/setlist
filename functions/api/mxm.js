@@ -84,6 +84,24 @@ export async function onRequest(context) {
     );
   }
 
+  // debug endpoint: show what musixmatch.com returns
+  if (action === "debug") {
+    try {
+      const pageRes = await fetch("https://www.musixmatch.com/search", {
+        headers: { "User-Agent": UA, Cookie: "mxm_bab=AB" },
+      });
+      const html = await pageRes.text();
+      // find all script src attributes
+      const srcPattern = /src="([^"]*\.js)"/g;
+      const srcs = [];
+      let sm;
+      while ((sm = srcPattern.exec(html)) !== null) srcs.push(sm[1]);
+      return new Response(JSON.stringify({ status: pageRes.status, scriptCount: srcs.length, scripts: srcs.slice(-20), htmlLen: html.length, hasApp: html.includes('_app'), sample: html.substring(0, 2000) }, null, 2), { headers: corsHeaders });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+    }
+  }
+
   try {
     const secret = await getSecret();
     const base = "https://www.musixmatch.com/ws/1.1/";
