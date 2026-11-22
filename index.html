@@ -188,12 +188,12 @@
     </div>
     <div class="card" style="max-width:640px;margin-bottom:18px">
       <strong>Musixmatch (αυτόματοι στίχοι)</strong>
-      <p class="muted">Αναζητά αυτόματα ολόκληρους στίχους στο Musixmatch. Δεν χρειάζεται API key.</p>
+      <p class="muted">Βάλε το δωρεάν API key σου από το developer.musixmatch.com. Τα τραγούδια που δεν υπάρχουν στη βιβλιοθήκη θα φέρνονται αυτόματα. Στο δωρεάν πλάνο φέρνει περίπου το 30% των στίχων.</p>
+      <label for="mxmKey">API key</label>
       <div class="row">
-        <label style="margin:0;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);display:flex;gap:8px;align-items:center;width:auto">
-          <input type="checkbox" id="mxmOn" style="width:auto" checked> Αυτόματη αναζήτηση στο Musixmatch
-        </label>
-        <button class="btn ghost small" id="mxmTest">Δοκιμή</button>
+        <input id="mxmKey" type="password" placeholder="π.χ. 1a2b3c…" style="flex:1;min-width:200px">
+        <button class="btn" id="mxmSave">Αποθήκευση</button>
+        <button class="btn ghost" id="mxmTest">Δοκιμή</button>
       </div>
       <p class="muted" id="mxmStatus"></p>
     </div>
@@ -501,7 +501,7 @@ async function fillAuto(i, p){
   const el=document.getElementById('mx'+i); if(!el) return;
   await fillAuto2(i,p,el);
   const pre=el.querySelector('.lyrics');
-  const src=el.dataset.src==='stixoi.gr'?'stixoi.gr':el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Στίχοι: Musixmatch')?'Musixmatch':null;
+  const src=el.dataset.src==='stixoi.gr'?'stixoi.gr':el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Musixmatch (απόσπασμα)')?'Musixmatch 30%':null;
   setRow(i, src?'✓ '+src+' (δες παρακάτω)':pre.textContent, !!src);
 }
 async function fillAuto2(i, p, el){
@@ -526,7 +526,7 @@ async function fillAuto2(i, p, el){
       msg.push('LRCLIB: δεν βρέθηκε');
     }catch(e){ msg.push('LRCLIB: '+(e.name==='AbortError'?'timeout':'δεν απαντά')); }
   }
-  if(mxmOn()){ pre.textContent='Αναζήτηση στο Musixmatch…'; await fillFromMxm(i,p); if(msg.length && pre.textContent.startsWith('Musixmatch:')) pre.textContent=msg.join(' · ')+' · '+pre.textContent; return; }
+  if(getMxmKey()){ pre.textContent='Αναζήτηση στο Musixmatch…'; await fillFromMxm(i,p); if(msg.length && pre.textContent.startsWith('Musixmatch:')) pre.textContent=msg.join(' · ')+' · '+pre.textContent; return; }
   pre.innerHTML=esc(msg.join(' · '))+` · <a href="${firstResultUrl(p.artist?p.artist+' - '+p.title:p.title)}" target="_blank" rel="noopener">Άνοιγμα 1ου αποτελέσματος ↗</a>`;
 }
 document.getElementById('lrcOn').checked=lrcOn();
@@ -538,40 +538,25 @@ document.getElementById('lrcTest').onclick=async()=>{
   catch(e){ st.textContent='✗ Δεν απαντά ('+e.message+')'; }
 };
 
-// ---------- Musixmatch (via serverless proxy, full lyrics) ----------
-function mxmOn(){ try{ return localStorage.getItem(STORE+'-mxm')!=='0'; }catch(e){ return window._mxm!==false; } }
-async function mxmSearch(query){
-  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),15000);
-  try{
-    const r=await fetch('/api/mxm?action=search&q='+encodeURIComponent(query),{signal:ctl.signal});
-    if(!r.ok) throw new Error('Σφάλμα '+r.status);
-    return await r.json();
-  } finally { clearTimeout(t); }
-}
-async function mxmGetLyrics(trackId){
-  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),15000);
-  try{
-    const r=await fetch('/api/mxm?action=lyrics&track_id='+trackId,{signal:ctl.signal});
-    if(!r.ok) throw new Error('Σφάλμα '+r.status);
-    return await r.json();
-  } finally { clearTimeout(t); }
+// ---------- Musixmatch (official API, JSONP) ----------
+function getMxmKey(){ try{ return localStorage.getItem(STORE+'-mxm')||''; }catch(e){ return window._mxm||''; } }
+let jpN=0;
+function jsonp(url, ms=10000){
+  return new Promise((ok,fail)=>{
+    const cb='_mxcb'+(jpN++), sc=document.createElement('script');
+    const done=()=>{ delete window[cb]; sc.remove(); clearTimeout(t); };
+    const t=setTimeout(()=>{ done(); fail(new Error('timeout')); }, ms);
+    window[cb]=d=>{ done(); ok(d); };
+    sc.onerror=()=>{ done(); fail(new Error('network')); };
+    sc.src=url+'&format=jsonp&callback='+cb; document.head.appendChild(sc);
+  });
 }
 async function mxmLyrics(title, artist){
-  // search for the track
-  const q = (artist ? artist+' '+title : title).trim();
-  const sr = await mxmSearch(q);
-  const list = sr?.message?.body?.track_list || [];
-  if(!list.length) throw new Error('Δεν βρέθηκε στο Musixmatch');
-  // pick best match
-  const t=norm(title), a=norm(artist);
-  const score=x=>{ const tr=x.track; return (norm(tr.track_name)===t?4:norm(tr.track_name).includes(t)?2:0)+(a&&norm(tr.artist_name).includes(a)?3:0); };
-  const best=list.sort((x,y)=>score(y)-score(x))[0].track;
-  // fetch lyrics
-  const lr = await mxmGetLyrics(best.track_id);
-  const code = lr?.message?.header?.status_code;
-  if(code!==200) throw new Error(code===404?'Βρέθηκε αλλά χωρίς στίχους':'Σφάλμα '+code);
-  return { lyrics_body: lr.message.body.lyrics.lyrics_body, artist_name: best.artist_name, track_name: best.track_name,
-           lyrics_copyright: lr.message.body.lyrics.lyrics_copyright };
+  const u='https://api.musixmatch.com/ws/1.1/matcher.lyrics.get?apikey='+encodeURIComponent(getMxmKey())+
+    '&q_track='+encodeURIComponent(title)+(artist?'&q_artist='+encodeURIComponent(artist):'');
+  const d=await jsonp(u); const code=d?.message?.header?.status_code;
+  if(code!==200) throw new Error(code===401?'Λάθος API key':code===404?'Δεν βρέθηκε στο Musixmatch':code===402?'Τέλος ημερήσιου ορίου':'Σφάλμα '+code);
+  return d.message.body.lyrics;
 }
 async function fillFromMxm(i, p){
   const el=document.getElementById('mx'+i); if(!el) return;
@@ -581,18 +566,20 @@ async function fillFromMxm(i, p){
     pre.classList.remove('muted');
     pre.textContent=(L.lyrics_body||'').trim();
     el.insertAdjacentHTML('beforeend',
-      `<p class="muted no-print" style="font-size:12px;margin-top:10px">Στίχοι: Musixmatch · ${esc(L.track_name)} — ${esc(L.artist_name)}${L.lyrics_copyright?' · '+esc(L.lyrics_copyright.trim()):''} · <a href="#" data-save="${i}">Αποθήκευση στη βιβλιοθήκη</a></p>`);
-    el.querySelector('[data-save]').onclick=e=>{ e.preventDefault();
-      document.querySelector('nav button[data-tab="libraryPanel"]').click();
-      fillForm({title:p.title, artist:p.artist||L.artist_name, lyrics:(L.lyrics_body||'').trim()});
-      document.getElementById('key').focus(); };
-  }catch(e){ pre.textContent='Musixmatch: '+(e.name==='AbortError'?'timeout':(e.message==='Failed to fetch'?'δεν απαντά':e.message)); }
+      `<p class="muted" style="font-size:12px;margin-top:10px">Στίχοι: Musixmatch (απόσπασμα)${L.lyrics_copyright?' · '+esc(L.lyrics_copyright.trim()):''}</p>`+
+      (L.pixel_tracking_url?`<img src="${esc(L.pixel_tracking_url)}" alt="" width="1" height="1" style="position:absolute">`:''));
+  }catch(e){ pre.textContent='Musixmatch: '+(e.message==='network'?'δεν απαντά (έλεγξε το API key)':e.message); }
 }
-document.getElementById('mxmOn').checked=mxmOn();
-document.getElementById('mxmOn').onchange=e=>{ try{ localStorage.setItem(STORE+'-mxm',e.target.checked?'1':'0'); }catch(_){ window._mxm=e.target.checked; } };
+document.getElementById('mxmKey').value=getMxmKey();
+document.getElementById('mxmSave').onclick=()=>{
+  const v=document.getElementById('mxmKey').value.trim();
+  try{ localStorage.setItem(STORE+'-mxm',v); }catch(e){ window._mxm=v; }
+  toast('Το key αποθηκεύτηκε');
+};
 document.getElementById('mxmTest').onclick=async()=>{
+  document.getElementById('mxmSave').click();
   const st=document.getElementById('mxmStatus'); st.textContent='Δοκιμή…';
-  try{ const L=await mxmLyrics('Σώμα μου','Νότης Σφακιανάκης'); st.textContent='✓ Λειτουργεί! Βρέθηκε: '+L.track_name+' — '+L.artist_name; }
+  try{ const L=await mxmLyrics('Σώμα μου','Νότης Σφακιανάκης'); st.textContent='✓ Λειτουργεί. Πρώτη γραμμή: '+(L.lyrics_body||'').split('\n')[0]; }
   catch(e){ st.textContent='✗ '+e.message; }
 };
 document.getElementById('buildBtn').onclick=build;
