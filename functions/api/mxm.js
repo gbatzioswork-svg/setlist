@@ -177,6 +177,23 @@ export async function onRequest(context) {
       return new Response(t, { headers: cors });
     }
 
+    if (action === "sign") {
+      // Return a signed URL that the browser can fetch directly from www.musixmatch.com
+      const endpoint = url.searchParams.get("endpoint") || "track.search";
+      const rawParams = {};
+      for (const [k, v] of url.searchParams.entries()) {
+        if (k !== "action" && k !== "endpoint") rawParams[k] = v;
+      }
+      const qs = new URLSearchParams({
+        app_id: "web-desktop-app-v1.0",
+        format: "json",
+        ...rawParams,
+      }).toString().replace(/%20/g, "+");
+      const fullUrl = BASE_URL + endpoint + "?" + qs;
+      const sig = await generateSignature(fullUrl, secret);
+      return new Response(JSON.stringify({ url: fullUrl + sig }), { headers: cors });
+    }
+
     if (action === "search") {
       const q = url.searchParams.get("q") || "";
       const usertoken = url.searchParams.get("usertoken") || "";
