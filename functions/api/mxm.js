@@ -166,22 +166,37 @@ export async function onRequest(context) {
       return new Response(JSON.stringify(steps, null, 2), { headers: cors });
     }
 
+    if (action === "token") {
+      // Try to get a user token from the desktop API
+      const tokenUrl = "https://apic-desktop.musixmatch.com/ws/1.1/token.get?app_id=web-desktop-app-v1.0&format=json";
+      const sig = await generateSignature(BASE_URL + "token.get?app_id=web-desktop-app-v1.0&format=json", secret);
+      const r = await fetch(tokenUrl + sig, {
+        headers: { "User-Agent": USER_AGENT },
+      });
+      const t = await r.text();
+      return new Response(t, { headers: cors });
+    }
+
     if (action === "search") {
       const q = url.searchParams.get("q") || "";
-      const data = await mxmRequest("track.search", {
+      const usertoken = url.searchParams.get("usertoken") || "";
+      const params = {
         q: q,
         f_has_lyrics: "true",
         page_size: "10",
         page: "1",
-      }, secret);
+      };
+      if (usertoken) params.usertoken = usertoken;
+      const data = await mxmRequest("track.search", params, secret);
       return new Response(JSON.stringify(data), { headers: cors });
     }
 
     if (action === "lyrics") {
       const trackId = url.searchParams.get("track_id") || "";
-      const data = await mxmRequest("track.lyrics.get", {
-        track_id: trackId,
-      }, secret);
+      const usertoken = url.searchParams.get("usertoken") || "";
+      const params = { track_id: trackId };
+      if (usertoken) params.usertoken = usertoken;
+      const data = await mxmRequest("track.lyrics.get", params, secret);
       return new Response(JSON.stringify(data), { headers: cors });
     }
 
