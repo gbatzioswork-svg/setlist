@@ -96,14 +96,23 @@ async function mxmRequest(endpoint, params, secret) {
     ...params,
   }).toString().replace(/%20/g, "+");
 
+  // Sign with the www URL (that's what the signature is based on)
   const url = BASE_URL + endpoint + "?" + qs;
   const sig = await generateSignature(url, secret);
   const signedUrl = url + sig;
 
-  const r = await fetch(signedUrl, {
-    headers: { "User-Agent": USER_AGENT },
-  });
-  return r.json();
+  // Try www first, fall back to apic-desktop if we get non-JSON
+  for (const base of [BASE_URL, "https://apic-desktop.musixmatch.com/ws/1.1/"]) {
+    const tryUrl = base + endpoint + "?" + qs + sig;
+    const r = await fetch(tryUrl, {
+      headers: { "User-Agent": USER_AGENT },
+    });
+    const text = await r.text();
+    if (text.trim().startsWith("{")) {
+      try { return JSON.parse(text); } catch (_) {}
+    }
+  }
+  throw new Error("Musixmatch returned non-JSON from both endpoints");
 }
 
 export async function onRequest(context) {
@@ -122,6 +131,40 @@ export async function onRequest(context) {
 
   try {
     const secret = await getSecret();
+
+    if (action === "debug") {
+      // Check each step
+      const steps = {};
+      try {
+        const appUrl = await getLatestAppUrl();
+        steps.appUrl = appUrl;
+      } catch (e) { steps.appUrlError = e.message; }
+      steps.secret = secret ? secret.substring(0, 8) + "..." : null;
+
+      // Try a raw fetch to www
+      try {
+        const qs = "track.search?app_id=web-desktop-app-v1.0&format=json&q=hello&f_has_lyrics=true&page_size=1&page=1";
+        const rawUrl = BASE_URL + qs;
+        const sig = await generateSignature(rawUrl, secret);
+        const r = await fetch(rawUrl + sig, { headers: { "User-Agent": USER_AGENT } });
+        const t = await r.text();
+        steps.wwwStatus = r.status;
+        steps.wwwFirst100 = t.substring(0, 100);
+      } catch (e) { steps.wwwError = e.message; }
+
+      // Try apic-desktop
+      try {
+        const qs = "track.search?app_id=web-desktop-app-v1.0&format=json&q=hello&f_has_lyrics=true&page_size=1&page=1";
+        const rawUrl = "https://apic-desktop.musixmatch.com/ws/1.1/" + qs;
+        const sig = await generateSignature(BASE_URL + qs, secret);
+        const r = await fetch(rawUrl + sig, { headers: { "User-Agent": USER_AGENT } });
+        const t = await r.text();
+        steps.apicStatus = r.status;
+        steps.apicFirst100 = t.substring(0, 100);
+      } catch (e) { steps.apicError = e.message; }
+
+      return new Response(JSON.stringify(steps, null, 2), { headers: cors });
+    }
 
     if (action === "search") {
       const q = url.searchParams.get("q") || "";
