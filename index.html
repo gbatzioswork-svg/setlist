@@ -501,7 +501,7 @@ async function fillAuto(i, p){
   const el=document.getElementById('mx'+i); if(!el) return;
   await fillAuto2(i,p,el);
   const pre=el.querySelector('.lyrics');
-  const src=el.dataset.src==='stixoi.gr'?'stixoi.gr':el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Musixmatch (απόσπασμα)')?'Musixmatch 30%':null;
+  const src=el.dataset.src==='stixoi.gr'?'stixoi.gr':el.dataset.src==='lyrics.ovh'?'lyrics.ovh':el.textContent.includes('Από LRCLIB')?'LRCLIB':el.textContent.includes('Musixmatch (απόσπασμα)')?'Musixmatch 30%':null;
   setRow(i, src?'✓ '+src+' (δες παρακάτω)':pre.textContent, !!src);
 }
 async function fillAuto2(i, p, el){
@@ -526,6 +526,23 @@ async function fillAuto2(i, p, el){
       msg.push('LRCLIB: δεν βρέθηκε');
     }catch(e){ msg.push('LRCLIB: '+(e.name==='AbortError'?'timeout':'δεν απαντά')); }
   }
+  // lyrics.ovh (free, no key, limited Greek coverage)
+  if(p.artist){
+    try{
+      const ovhLyrics=await ovhFetch(p.title, p.artist);
+      if(ovhLyrics){
+        pre.classList.remove('muted'); pre.textContent=ovhLyrics;
+        el.dataset.src='lyrics.ovh';
+        el.insertAdjacentHTML('beforeend',`<p class="muted no-print" style="font-size:12px;margin-top:10px">Από lyrics.ovh · <a href="#" data-save="${i}">Αποθήκευση στη βιβλιοθήκη (για να βάλεις τονικότητα)</a></p>`);
+        el.querySelector('[data-save]').onclick=e=>{ e.preventDefault();
+          document.querySelector('nav button[data-tab="libraryPanel"]').click();
+          fillForm({title:p.title, artist:p.artist, lyrics:ovhLyrics});
+          document.getElementById('key').focus(); };
+        return;
+      }
+      msg.push('lyrics.ovh: δεν βρέθηκε');
+    }catch(e){ msg.push('lyrics.ovh: '+(e.name==='AbortError'?'timeout':'δεν απαντά')); }
+  }
   if(getMxmKey()){ pre.textContent='Αναζήτηση στο Musixmatch…'; await fillFromMxm(i,p); if(msg.length && pre.textContent.startsWith('Musixmatch:')) pre.textContent=msg.join(' · ')+' · '+pre.textContent; return; }
   pre.innerHTML=esc(msg.join(' · '))+` · <a href="${firstResultUrl(p.artist?p.artist+' - '+p.title:p.title)}" target="_blank" rel="noopener">Άνοιγμα 1ου αποτελέσματος ↗</a>`;
 }
@@ -537,6 +554,18 @@ document.getElementById('lrcTest').onclick=async()=>{
     st.textContent=h?'✓ Λειτουργεί. Βρέθηκε: '+h.trackName+' — '+h.artistName:'✓ Το LRCLIB απαντά, αλλά δεν έχει το δοκιμαστικό τραγούδι.'; }
   catch(e){ st.textContent='✗ Δεν απαντά ('+e.message+')'; }
 };
+
+// ---------- lyrics.ovh (free, no API key) ----------
+async function ovhFetch(title, artist){
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(), 10000);
+  try{
+    const r=await fetch('https://api.lyrics.ovh/v1/'+encodeURIComponent(artist)+'/'+encodeURIComponent(title),{signal:ctl.signal});
+    clearTimeout(t);
+    if(!r.ok) return null;
+    const j=await r.json();
+    return j.lyrics&&j.lyrics.trim()?j.lyrics.trim():null;
+  }catch(e){ clearTimeout(t); throw e; }
+}
 
 // ---------- Musixmatch (official API, JSONP) ----------
 function getMxmKey(){ try{ return localStorage.getItem(STORE+'-mxm')||''; }catch(e){ return window._mxm||''; } }
